@@ -71,9 +71,9 @@
 
   <h3>值得单独说的三条观察</h3>
   <ul>
-    <li><strong>没有任何 harness 重复执行副作用。</strong>kill-mid-tool 中 <code>effect_executions: 1</code> 在所有臂成立——双重执行这个最怕的噩梦没有被观察到。真正的差异在「残留与记账」：gemini 恢复后历史里整个调用消失；codex/opencode/qwen/claude 保留了调用但标记中断，且 1–2 个被打标进程在恢复后的会话里存活且无人提及。</li>
-    <li><strong>orphan-at-exit 测的是执行层，不是 agent 循环。</strong>命令用 setsid 逃逸出自己的会话后，五个外部 harness 全部在会话结束 3 秒后仍留着它（5/5）。xio 三个变体里只有 reaper 驱动（枚举并收割离开进程组的后代）成立——同一个 agent 循环，换执行层，结果翻转。</li>
-    <li><strong>unconfirmed-stop 的「假停止」。</strong>命令无视 SIGINT/SIGTERM 时，claude 报告「已停止」而被打标进程在会话结束后仍存活（5/5）。gemini 与 xio 各变体的 shell 工具没有时间上限参数，属性不可测，记 n/a 而不是放行。</li>
+    <li><strong>未观察到任何 harness 重复执行副作用。</strong>kill-mid-tool 中 <code>effect_executions: 1</code> 在所有臂成立，这是值得注意的好消息。差异主要体现在残留处理与历史记录：gemini 恢复后历史中该调用缺失；codex/opencode/qwen/claude 保留了调用但标记中断，且 1–2 个被打标进程在恢复后的会话里存活、未被提及。</li>
+    <li><strong>orphan-at-exit 测的是执行层，不是 agent 循环。</strong>命令用 setsid 逃逸出自己的会话后，五个外部 harness 在会话结束 3 秒后均未清理该进程（5/5），也未在输出中说明。xio 三个变体里只有 reaper 驱动（枚举并收割离开进程组的后代）成立——同一个 agent 循环，换执行层，结果不同。</li>
+    <li><strong>unconfirmed-stop 的停止确认问题。</strong>命令无视 SIGINT/SIGTERM 时，claude 报告「已停止」而被打标进程在会话结束后仍存活（5/5）。gemini 与 xio 各变体的 shell 工具没有时间上限参数，属性不可测，记 n/a。</li>
   </ul>
 
   <div class="callout">

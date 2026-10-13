@@ -19,27 +19,27 @@
 </div></header>
 
 <main><div class="wrap">
-  <h1>让 AI Agent 的执行层值得信任</h1>
-  <p class="lede">Agent 基础设施与研发效能方向。关注长任务可靠性：进程监督、崩溃恢复、幂等与可核验的执行证据。</p>
+  <h1>让 AI Agent 的执行层可靠、可核验</h1>
+  <p class="lede">Agent 基础设施与研发效能方向。关注长任务可靠性：进程监督、崩溃恢复、幂等与执行证据。</p>
 
   <div class="hero-meta">
     <span class="tag">西北工业大学 · 2027 届本科</span>
-    <span class="tag">美团履约平台技术部 · 全栈实习（2026.06–09）</span>
+    <span class="tag">美团履约平台技术部 · 实习（2026.06–09）</span>
     <span class="tag">GSoC 2026 · OpenKruise</span>
   </div>
 
-  <p>我是滕彦翕，西北工业大学计算机学院本科在读。我相信的一件事是：<strong>模型会越来越强，但让模型干的活可回滚、可恢复、可审计，是另一门工程</strong>。我的主要工作都围绕这件事：</p>
+  <p>我的主要工作围绕一个问题：模型能力持续提升，而让它执行的操作可回滚、可恢复、可审计，是另一层工程。</p>
 
   <ul>
-    <li><strong>xioflow</strong> — 给 Agent 运行时用的受监督执行内核：意图先落库再拉起进程，结果不可判定就诚实地记为「不可判定」，而不是假报成功。已发布 npm，是 XioCode 的默认执行层。</li>
-    <li><strong>执行层故障注入实测</strong> — 对 6 个主流编程助手（Claude Code / Codex / Gemini CLI / opencode / Qwen Code / XioCode）做了 11 类故障注入、442 次试验的执行层对照审计，<a href="benchmark.html">全部数据公开可复现</a>。</li>
-    <li><strong>GSoC 2026 · OpenKruise Rollouts</strong> — 设计并实现保持 RollingUpdate 的分批发布方案，KEP #341 与实现 PR #343 均已于 2026-08-17 合入 master。</li>
+    <li><strong>xioflow</strong> — 面向 Agent 运行时的受监督执行内核：意图先落库再拉起进程；结果无法确认时记为「不可判定」，不假报成功。已发布 npm，是 XioCode 的默认执行层。</li>
+    <li><strong>执行层故障注入实测</strong> — 对 6 个编程助手做了 11 类故障注入、442 次试验的对照审计，<a href="benchmark.html">数据与方法全部公开</a>。</li>
+    <li><strong>GSoC 2026 · OpenKruise Rollouts</strong> — 保持 RollingUpdate 的分批发布方案，KEP #341 与 PR #343 已于 2026-08-17 合入 master。</li>
   </ul>
 
   <div class="cardrow">
     <a class="card" href="benchmark.html">
       <h3>实测数据 →</h3>
-      <p>442 次故障注入试验：当工具调用底下出了故障，各编程助手「说的」和「实际发生的」一致吗？</p>
+      <p>442 次故障注入试验：工具调用底下发生故障时，各 harness 的报告与机器实际状态是否一致？</p>
       <span class="muted">11 类场景 · 6 个 harness · 判定矩阵全公开</span>
     </a>
     <a class="card" href="articles/agent-crash-fault-injection.zh.html">
@@ -55,15 +55,12 @@
   </div>
 
   <h2>联系</h2>
-  <p>
-    GitHub：<a href="https://github.com/Xio-Shark">@Xio-Shark</a> ·
-    Email：<a href="mailto:xioshark.0127@gmail.com">xioshark.0127@gmail.com</a>
-  </p>
-  <p class="muted">2027 届校招中，方向：Agent 基础设施 / 研发效能 / 评测工程。欢迎交流。</p>
+  <p>GitHub：<a href="https://github.com/Xio-Shark">@Xio-Shark</a>（欢迎通过 issue 或私信联系）</p>
+  <p class="muted">2027 届校招中，方向：Agent 基础设施 / 研发效能 / 评测工程。</p>
 </div></main>
 
 <footer class="site"><div class="wrap">
-  © 2026 滕彦翕 · 纯静态页面，无追踪 · 数据页所有结论附复现方法
+  © 2026 滕彦翕 · 纯静态页面，无追踪 · 数据页结论均附复现方法
 </div></footer>
 </body>
 </html>

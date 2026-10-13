@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>What actually happens when an AI agent crashes? — 442 fault-injection trials across 6 coding agents · Teng Yanxi</title>
-<meta name="description" content="When something goes wrong underneath a tool call, does what a coding agent says match what happened? 11 fault scenarios, 442 trials, full data and repro scripts.">
+<title>What happens when an AI agent crashes? — 442 fault-injection trials across 6 coding agents · Teng Yanxi</title>
+<meta name="description" content="When something goes wrong underneath a tool call, does a coding agent's report match the machine's actual state? 11 fault scenarios, 442 trials, data and repro scripts included.">
 <link rel="stylesheet" href="../style.css">
 </head>
 <body>
@@ -19,109 +19,103 @@
 </div></header>
 
 <main><div class="wrap article-body">
-  <h1>What actually happens when an AI agent crashes?</h1>
+  <h1>What happens when an AI agent crashes?</h1>
   <p class="sub">442 fault-injection trials across 6 coding agents · 2026-10-13 · <a href="agent-crash-fault-injection.zh.html">中文版</a></p>
 
-  <p class="lede">The best model on SWE-bench Verified now scores 96. "Can the model write code?" is settled. The open question is what happens after it types a shell command for you — and the world falls apart mid-call. The pipe is held. A process escapes its session. The host gets SIGKILLed. At that moment, does what your coding agent <em>says</em> match what <em>actually happened</em>?</p>
+  <p class="lede">The top score on SWE-bench Verified is now 96 — "can the model write code?" is no longer the main question. A more practical one: when the command an agent runs fails midway — a process escapes, a pipe is held, the host is SIGKILLed — does the agent's report match the machine's actual state?</p>
 
-  <p>Over the past month I built a bench for this question and ran 11 fault scenarios against 6 mainstream coding agents (Claude Code, Codex CLI, Gemini CLI, opencode, Qwen Code, and my own XioCode) — 442 trials in total. This post covers the method, the data, and what I learned. Every number reproduces from the <a href="https://github.com/Xio-Shark/xioflow">xioflow repository</a>.</p>
+  <p>Over the past month I built a bench for this question and ran 11 fault scenarios against 6 mainstream coding agents (Claude Code, Codex CLI, Gemini CLI, opencode, Qwen Code, and my own XioCode), 442 trials in total. This post records the method, the data, and the conclusions. Every number reproduces from the <a href="https://github.com/Xio-Shark/xioflow">xioflow repository</a>.</p>
 
   <div class="toc"><strong>Contents</strong>
     <ol>
       <li><a href="#method">Method: tape replay + outside audit</a></li>
       <li><a href="#findings">Four findings</a></li>
-      <li><a href="#why">Why everyone leaks: three assumptions of a naive execution layer</a></li>
-      <li><a href="#kernel">Making "indeterminate" a first-class citizen</a></li>
-      <li><a href="#recovery">One step further: after a crash, must we start over?</a></li>
+      <li><a href="#why">Three assumptions of a naive execution layer</a></li>
+      <li><a href="#kernel">Making "indeterminate" a first-class state</a></li>
+      <li><a href="#recovery">After a crash, must we start over?</a></li>
       <li><a href="#limits">Limits and verdict discipline</a></li>
     </ol>
   </div>
 
   <h2 id="method">1. Method: tape replay + outside audit</h2>
 
-  <p>Testing faults against a real model has two problems: model behavior is nondeterministic, so the same fault looks different every run and nothing can be attributed; and it burns money. So I changed the approach —</p>
+  <p>Testing faults with a real model has two difficulties: model behavior is nondeterministic, so the same fault looks different each run and is hard to attribute; and it is expensive. Instead, <strong>a local HTTP endpoint impersonates the model service and replays a pre-recorded tape of tool calls</strong>. Every harness executes the identical command sequence, fault timing is fully controlled, and each trial is deterministic and free.</p>
 
-  <p><strong>A local HTTP endpoint impersonates the model service and replays a pre-recorded tape.</strong> The tape says: first turn, call this tool with this command; second turn, call that one. Every harness executes the exact same command sequence, fault timing is fully controlled, and every trial is deterministic and free.</p>
+  <p>The audit perspective matters just as much: <strong>the harness's own account is not taken as ground truth</strong>. After each trial, evidence is collected from outside — are tagged processes still alive? How many times did the side effect execute per the ledger? What is the final file tree? — and compared against the tool results the harness sent back to the "model". A mismatch is recorded as a violation.</p>
 
-  <p>The second key choice is the audit perspective: <strong>trust nothing the harness says about itself</strong>. After each trial, collect evidence from outside the machine — are tagged processes still alive in the process table? How many times did the side effect actually execute per the ledger? What does the final file tree look like? — then compare against the tool results the harness sent back to the "model". A mismatch is a violation.</p>
-
-  <p>Verdict discipline: 5 trials per cell, and only 5/5 or 4/5 counts as stable; every stably-violated cell gets an auto-generated 3/3 repro script. All 442 trials ran on darwin arm64, Node v26.9.0 (the 2026-09-30 round).</p>
+  <p>Verdict discipline: 5 trials per cell; only 4/5 or better counts as stable; every stably-violated cell gets an auto-generated 3/3 repro script. All 442 trials ran on darwin arm64, Node v26.9.0 (the 2026-09-30 round).</p>
 
   <h2 id="findings">2. Four findings</h2>
 
-  <h3>Finding 1: Orphaned processes are the norm, not a stray bug</h3>
+  <h3>Finding 1: Orphaned processes are widespread</h3>
 
-  <p>Scenario <code>orphan-at-exit</code>: the command under test spawns a descendant in its own session via <code>setsid</code>, then returns normally. Three seconds after the session ends — <strong>all five external harnesses (5/5) left the escaped process alive, and none of them said so</strong>.</p>
+  <p>Scenario <code>orphan-at-exit</code>: the command spawns a descendant in its own session via <code>setsid</code>, then returns normally. Three seconds after the session ends, <strong>none of the five external harnesses had cleaned up the escaped process (5/5), and none disclosed it in their output</strong>.</p>
 
-  <p>The more interesting part is the control: the same XioCode agent loop with three execution layers — only the reaper driver, which re-enumerates descendants that escaped the process group, passed (0 survivors); the other two drivers violated identically. <strong>The problem is not how smart the agent is. It is whether the execution layer treats "processes can escape the group" as a case it must handle.</strong></p>
+  <p>The control is instructive: the same XioCode agent loop with three execution layers — only the reaper driver, which re-enumerates descendants that left the process group, passed (0 survivors); the other two drivers violated identically. <strong>The difference is in the execution layer, not the agent loop.</strong></p>
 
-  <h3>Finding 2: SIGKILL the host mid-tool-call — nobody re-executed, but leftovers and bookkeeping are a mess</h3>
+  <h3>Finding 2: SIGKILL mid-tool-call — no repeated effects, but gaps in leftovers and history</h3>
 
-  <p>Scenario <code>kill-mid-tool</code>: the command performs its side effect immediately and keeps running; the harness is SIGKILLed mid-call, then the session is resumed. Good news first: <strong>in every arm, the side effect executed exactly once</strong>. The nightmare of crash-induced double execution was not observed anywhere.</p>
+  <p>Scenario <code>kill-mid-tool</code>: the command applies its side effect immediately and keeps running; the harness is SIGKILLed mid-call, then resumed. The positive result first: <strong>in every arm the side effect executed exactly once</strong> — no repeated execution was observed anywhere.</p>
 
-  <p>But then the harnesses diverged:</p>
+  <p>The differences appear after resumption:</p>
   <ul>
-    <li><strong>gemini</strong>: in the resumed session's history, the tool call <em>vanished entirely</em> (5/5) — yet its side effect did happen. Every subsequent model decision rests on a ledger with a missing page. Three tagged processes also survived, mentioned by no one.</li>
-    <li><strong>codex / opencode / qwen / claude</strong>: history kept the call, marked interrupted — but 1–2 tagged processes survived the resumed session, again mentioned by no one.</li>
-    <li><strong>xio (kernel arm)</strong>: 0 survivors, and the resumed tool result explicitly said the outcome was unknown and to inspect the workspace before acting — the kernel records the operation as <code>indeterminate</code> instead of asserting a result on its behalf.</li>
+    <li><strong>gemini</strong>: the call was missing from the resumed session's history (5/5), although its side effect did occur; three tagged processes also survived, unmentioned.</li>
+    <li><strong>codex / opencode / qwen / claude</strong>: history kept the call, marked interrupted — but 1–2 tagged processes survived the resumed session, unmentioned.</li>
+    <li><strong>xio (kernel arm)</strong>: 0 survivors, and the resumed tool result explicitly stated the outcome was unknown and to inspect the workspace first — the kernel records the operation as <code>indeterminate</code> rather than asserting a result on its behalf.</li>
   </ul>
 
-  <h3>Finding 3: "Stopped" does not necessarily mean stopped</h3>
+  <h3>Finding 3: A reported "stopped" is not always stopped</h3>
 
-  <p>Scenario <code>unconfirmed-stop</code>: the command ignores SIGINT and SIGTERM up to the tool's own time limit. claude reported the command as stopped while a tagged process survived the session (5/5). Scenario <code>pipe-hold</code>: the root exits but a child holds the output pipe for 20 seconds — gemini blocked inside the tool call for the full 20s; claude and qwen returned on time but left the pipe-holding process running, silently.</p>
+  <p>Scenario <code>unconfirmed-stop</code>: the command ignores SIGINT and SIGTERM up to the tool's time limit. claude reported the command as stopped while a tagged process survived the session (5/5). Scenario <code>pipe-hold</code>: the root exits but a child holds the output pipe for 20 seconds — gemini waited inside the call for the full 20s; claude and qwen returned on time but left the pipe-holding process running, without noting it in the result.</p>
 
-  <p>An unconfirmed stop reported as success is worse than an error: the upper layers keep stacking operations on a state they believe is clean.</p>
+  <p>An unconfirmed stop reported as success is harder to handle than an explicit error: upper layers keep operating on a state they assume is clean.</p>
 
-  <h3>Finding 4: MCP servers leak too</h3>
+  <h3>Finding 4: MCP servers can be left behind too</h3>
 
-  <p>Scenario <code>mcp-orphan-kill</code>: the session registers a stdio MCP server, then the harness is killed. gemini, opencode, claude and qwen all left the server running (5/5); codex held. The clean-exit path is better — only qwen left the server after a normal session end. As the MCP ecosystem explodes, "transport-layer orphans" will become a production incident near you.</p>
+  <p>Scenario <code>mcp-orphan-kill</code>: the session registers a stdio MCP server, then the harness is killed. gemini, opencode, claude and qwen did not reclaim the server (5/5); codex passed. The clean-exit path is better — only qwen left the server after a normal session end. As MCP adoption grows, ownership of transport-layer processes deserves more attention.</p>
 
-  <h2 id="why">3. Why everyone leaks: three assumptions of a naive execution layer</h2>
+  <h2 id="why">3. Three assumptions of a naive execution layer</h2>
 
-  <p>Nearly every harness's execution layer is some variant of <code>spawn() + timeout + read stdout to EOF</code>. It embeds three assumptions, and my 11 scenarios poke each one:</p>
+  <p>Most harness execution layers are variants of <code>spawn() + timeout + read stdout to EOF</code>, embedding three assumptions. The 11 scenarios test each of them:</p>
 
   <ol>
-    <li><strong>"When the child dies, its world is clean."</strong> No. Process groups, setsid, daemonization — descendants have many ways to survive (orphan-at-exit, cancel-tree, mcp-orphan).</li>
-    <li><strong>"If I told it to stop, it stopped."</strong> No. Signals can be ignored; a stop must be confirmed, and when it cannot be confirmed, the honest answer is "I don't know" (unconfirmed-stop).</li>
-    <li><strong>"Crashes are rare, so approximate bookkeeping is fine."</strong> No. The crash lands precisely between the side effect and the result report — and a missing ledger page costs more than the crash itself (kill-mid-tool vs kill-before-report: the latter passed everywhere, because the result had already been recorded).</li>
+    <li><strong>"Once the child exits, the environment is clean."</strong> Process groups, setsid, and daemonization all let descendants survive (orphan-at-exit, cancel-tree, mcp-orphan).</li>
+    <li><strong>"A stop signal means stopped."</strong> Signals can be ignored; a stop must be confirmed, and when it cannot be, that should be reported (unconfirmed-stop).</li>
+    <li><strong>"Crashes are rare, so approximate bookkeeping is acceptable."</strong> When a crash lands exactly between the side effect and the result report, the missing record costs more than the crash itself (compare kill-mid-tool with kill-before-report: the latter passed everywhere, because the result was already persisted).</li>
   </ol>
 
-  <h2 id="kernel">4. Making "indeterminate" a first-class citizen</h2>
+  <h2 id="kernel">4. Making "indeterminate" a first-class state</h2>
 
-  <p>xioflow is my answer: a supervised execution kernel that embeds into agent runtimes. Its design principles map one-to-one onto the three assumptions:</p>
+  <p>xioflow is the supervised execution kernel I built for these problems; its design principles correspond to the three assumptions:</p>
 
   <ul>
-    <li><strong>Persist intent before spawn.</strong> Every operation first records "what I am about to do" in SQLite, then spawns. After a crash there is no process that came from nowhere, and no operation that vanished into thin air.</li>
-    <li><strong>An outcome that cannot be determined is recorded as <code>indeterminate</code>.</strong> Not an error code — a first-class state: leases are retained, auto-retry is forbidden, and the resumed session is told honestly: "outcome unknown, inspect the workspace first." Fake success is eliminated at the type level.</li>
-    <li><strong>Stops are confirmed, and escalation is honest.</strong> SIGINT → SIGTERM → SIGKILL across the process group, then descendants are re-enumerated — including setsid escapees; whatever cannot be reaped is reported as residual PIDs, not swept under a "stopped" label.</li>
-    <li><strong>Same-ID resubmission is idempotent.</strong> Results are replayed by opId; a different fingerprint raises an error. For durable engines like Temporal or LangGraph, this layer makes activities and nodes at-most-once.</li>
+    <li><strong>Persist intent before spawn.</strong> Operations are recorded in SQLite before any process starts, so crash recovery never sees a process from nowhere or an operation with no record.</li>
+    <li><strong>Unconfirmable outcomes are recorded as <code>indeterminate</code>.</strong> A first-class state, not an error code: leases are retained, auto-retry is off, and the resumed session is told "outcome unknown, inspect first" — false success is excluded by the state model.</li>
+    <li><strong>Stops are confirmed; otherwise escalate.</strong> SIGINT → SIGTERM → SIGKILL across the process group, then descendants are re-enumerated (including setsid escapees); anything unreaped is reported as residual PIDs.</li>
+    <li><strong>Same-ID resubmission is idempotent.</strong> Recorded results are replayed by opId; a fingerprint mismatch is an error. For durable engines like Temporal or LangGraph, this layer can make activities and nodes at-most-once.</li>
   </ul>
 
-  <p>There is a cost: one extra durable write per operation and more involved process management. For "let an agent run a long task unattended," that is cheap insurance.</p>
+  <p>The cost is one durable write per operation and more involved process management. For unattended long-running tasks, that is a reasonable trade.</p>
 
-  <h2 id="recovery">5. One step further: after a crash, must we start over?</h2>
+  <h2 id="recovery">5. After a crash, must we start over?</h2>
 
-  <p>With an honest execution layer, the next question is efficiency: an agent is suspended mid-task, someone else changes the workspace meanwhile — is a whole-task restart the only option on resume?</p>
-
-  <p>Not necessarily. If every step left an observation record (what file was read, what content was seen), then on recovery you can <strong>validate the old trace against the changed workspace entry by entry</strong>: observations that still hold form a reusable prefix; recompute only the suffix from the first divergence. That is the mechanism tested in experiments E4–E9. Representative numbers:</p>
+  <p>Once the execution layer is honest comes the efficiency question: if the workspace changed while an agent was suspended, is a whole-task restart the only option? Not necessarily. If every step left an observation record, recovery can <strong>validate the old trace against the changed workspace entry by entry</strong>: observations that still hold form a reusable prefix, and only the suffix from the first divergence is recomputed. E4–E9 tested this mechanism. Representative numbers:</p>
 
   <ul>
     <li><strong>E5</strong> (a real runner across process restarts): blind resume was wrong in 2 of 3 scenarios; validated resume correct in 3/3; with no changes, requests dropped 4 → 2.</li>
-    <li><strong>E7</strong> (real read/edit tools + a competing commit): the recovered result matched the whole-restart baseline <strong>byte for byte</strong>, with the other actor's commit preserved; resumed requests 5 → 4. A counterintuitive detail: the first divergent step was the <code>edit</code>, not the later explicit <code>read</code> — an edit's return value itself carries information the competing change disproves. Ignoring mutation results would falsely claim a longer reusable prefix.</li>
-    <li><strong>E9</strong>: the companion journal compaction shrank payloads 70.2%, with restored data unchanged across all 61 checkpoint boundaries.</li>
+    <li><strong>E7</strong> (real read/edit tools + a competing commit): the recovered result matched the whole-restart baseline <strong>byte for byte</strong>, with the other actor's commit preserved; resumed requests 5 → 4. One notable detail: the first divergent step was the <code>edit</code>, not the later explicit <code>read</code> — an edit's return value itself carries information the competing change disproves, and ignoring mutation results would falsely claim a longer reusable prefix.</li>
+    <li><strong>E9</strong>: journal compaction shrank payloads 70.2%, with restored data unchanged across all 61 checkpoint boundaries.</li>
   </ul>
 
-  <p>There is honest bad news too. In the E8 real-model pilot, the recovery arm's requests dropped from 27 to 20 (an 18.7% lower token estimate) — but a negative control showed that two fresh runs can differ by 21 vs 14 requests from model variation alone. <strong>So that 18.7% cannot yet be attributed to recovery</strong>; a larger, order-balanced sample is needed. And there is clearly no speed win (55.6s vs 48.9s — reconstruction and validation take their own time). I kept this in the report as-is: I'd rather have a number I can still cite in five years than a prettier one that doesn't hold up.</p>
+  <p>There is also a negative result worth stating. In the E8 real-model pilot, the recovery arm's requests fell from 27 to 20 (an 18.7% lower token estimate) — but a negative control showed two fresh runs can differ by 21 vs 14 requests from model variation alone. <strong>So the 18.7% cannot yet be attributed to recovery</strong>; a larger, order-balanced sample is needed. There is also no speed win (55.6s vs 48.9s — reconstruction and validation have their own cost). I kept this in the report as-is: a verifiable number has more long-term value than a flattering one.</p>
 
   <h2 id="limits">6. Limits and verdict discipline</h2>
 
-  <p>What this data does not establish matters as much as what it does:</p>
-
   <ul>
-    <li>Tape replay drives <strong>scripted tool calls</strong>, not behavior with a real model choosing the calls. Per the standing discipline, any third-party violation must be reproduced once with a real model before it counts as a reportable finding.</li>
-    <li>Not a product ranking: different harnesses violate different properties, and a cell that holds says nothing about other cells.</li>
+    <li>Tape replay drives <strong>scripted tool calls</strong>, not behavior with a real model choosing calls. Per the standing discipline, any third-party violation must be reproduced once with a real model before it counts as a reportable finding.</li>
+    <li>This is not a product ranking: harnesses violate different properties, and single cells do not generalize.</li>
     <li>macOS arm64 only, recorded versions only (gemini-cli 0.46.0 / codex-cli 0.157.1 / opencode v2.0.16 / Claude Code 2.1.284 / qwen 0.24.7); sandbox and hardening options may change outcomes.</li>
-    <li>No harness was observed repeating a side effect — good news worth remembering.</li>
+    <li>No harness was observed repeating a side effect.</li>
   </ul>
 
   <h2>Reproduce &amp; links</h2>
@@ -137,9 +131,9 @@ node audit/repro/generate.mjs audit/results/&lt;date&gt;</code></pre>
     <li>Data page: <a href="../benchmark.html">benchmarks</a></li>
   </ul>
 
-  <p>If you build agent products, take these scenarios and poke your own execution layer. Finding a violation is not embarrassing — <strong>not knowing you violate is</strong>.</p>
+  <p>If you build agent products, you are welcome to run these scenarios against your own execution layer. Scenarios, verdicts, and repro scripts are all open source.</p>
 
-  <p class="muted">Author: Teng Yanxi (<a href="https://github.com/Xio-Shark">@Xio-Shark</a>), CS undergrad (class of 2027) at Northwestern Polytechnical University, GSoC 2026 contributor to OpenKruise. All numbers are from the 2026-09-30 recorded round and repository data published 2026-10-13; no new runs were made for this article.</p>
+  <p class="muted">Author: Teng Yanxi (<a href="https://github.com/Xio-Shark">@Xio-Shark</a>). All numbers are from the 2026-09-30 recorded round and repository data published 2026-10-13; no new runs were made for this article.</p>
 </div></main>
 
 <footer class="site"><div class="wrap">© 2026 Teng Yanxi · Reproduction with attribution welcome</div></footer>

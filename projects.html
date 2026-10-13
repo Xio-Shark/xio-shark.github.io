@@ -25,11 +25,11 @@
   <div class="proj">
     <h3><a href="https://github.com/Xio-Shark/xioflow">xioflow</a> · Agent 受监督执行内核与多智能体运行时</h3>
     <p class="stack">TypeScript · SQLite (WAL) · 零运行时依赖 · npm: @xioflow/kernel</p>
-    <p>Agent 运行时通常调一次 <code>spawn()</code> 然后听天由命：宿主在工具调用中途崩溃、取消无法确认时，留下的是孤儿进程、重复生效的副作用、以及对「实际发生了什么」的无记录。xioflow 把这些状态变成一等公民：</p>
+    <p>许多 Agent 运行时的执行层是 <code>spawn()</code> 加超时的简单封装：当宿主在工具调用中途崩溃、取消无法确认时，可能留下孤儿进程、结果不确定的副作用，以及缺失的执行记录。xioflow 把这些状态变成一等公民：</p>
     <ul class="tight">
       <li>意图先持久化再拉起进程，结果不可判定时记为 <code>indeterminate</code> 并保留租约，重启绝不盲目重放；</li>
       <li>按操作 ID（opId）实现幂等：同指纹重投直接复用记录的结果，指纹不同报错；</li>
-      <li>终止按 SIGINT → SIGTERM → SIGKILL 对进程组升级，并重新枚举逃逸（setsid）后代；无法确认就诚实上报残留 PID；</li>
+      <li>终止按 SIGINT → SIGTERM → SIGKILL 对进程组升级，并重新枚举逃逸（setsid）后代；无法完全收割时如实上报残留 PID；</li>
       <li>工作区快照 / 按步回滚 / 分叉，回滚范围按指纹校验，绝不动声明范围外的文件；</li>
       <li>三锁分离（OS 排他锁、SQLite WAL 写锁、资源租约）支撑多入口共用同一执行域，代际栅栏隔离过期属主。</li>
     </ul>
