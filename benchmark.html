@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>实测数据 · Agent 执行层故障注入与崩溃恢复 · 滕彦翕</title>
+<meta name="description" content="对 6 个 AI 编程助手的 11 类故障注入、442 次试验的执行层对照审计，以及观测感知崩溃恢复实验 E4–E9。方法、数据、复现脚本全公开。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="index.html">滕彦翕 <span>/ Xio-Shark</span></a>
+  <nav class="site">
+    <a href="index.html">首页</a>
+    <a href="projects.html">项目</a>
+    <a href="benchmark.html" class="active">实测数据</a>
+    <a href="articles.html">文章</a>
+  </nav>
+</div></header>
+
+<main><div class="wrap article-body">
+  <h1>实测数据：Agent 执行层故障注入与崩溃恢复</h1>
+  <p class="sub">所有结论附方法与复现脚本。原始报告：<a href="https://github.com/Xio-Shark/xioflow/blob/main/audit/reports/harness-execution-audit.md">harness-execution-audit.md</a> · <a href="https://github.com/Xio-Shark/xioflow/blob/main/audit/reports/recovery-comparison.md">recovery-comparison.md</a></p>
+
+  <div class="callout warn">
+    <strong>判定纪律（先读这个）。</strong>下面的故障注入审计用本地假端点回放固定磁带驱动各 harness——每个单元格确定、免费，但它陈述的是「harness 对一次脚本化工具调用的处理」，<strong>不是</strong>真实模型选调用时的行为。按既定纪律，任何第三方违规在被复现于真实模型之前不构成可报告的 finding。本页不构成对各产品的排名：不同 harness 违反的是不同属性，单格成立不能外推。
+  </div>
+
+  <h2>一、六个 harness 的执行层审计（2026-09-30 轮次）</h2>
+
+  <p><strong>问题：</strong>当工具调用底下出了故障，harness <em>说的</em>和<em>实际发生的</em>一致吗？测试台用本地 HTTP 端点冒充模型服务、回放工具调用磁带，在沙箱中无头驱动每个 harness，注入故障，然后从机器外部（进程表、副作用账本、文件树）对照 harness 自己的说法（它回传给「模型」的工具结果）。</p>
+
+  <p><strong>规模：</strong>442 次试验，11 类场景 × 9 个 harness 配置，每格 5 次（darwin arm64，Node v26.9.0）。只有 k/5 且 k ≥ 4 才算稳定判定。</p>
+
+  <p class="muted">被测版本：gemini-cli 0.46.0 · codex-cli 0.157.1 · opencode v2.0.16 · Claude Code 2.1.284 · qwen 0.24.7 · XioCode 1.6.0（xio 三个变体仅执行层不同）。</p>
+
+  <div class="table-scroll"><table>
+    <thead><tr>
+      <th>场景</th><th>gemini</th><th>codex</th><th>opencode</th><th>claude</th><th>xio:reaper</th><th>xio:node</th><th>xio:builtin</th><th>qwen</th>
+    </tr></thead>
+    <tbody>
+      <tr><td>baseline</td><td class="ok">holds 5/5</td><td class="ok">5/5</td><td class="ok">5/5</td><td class="ok">5/5</td><td class="ok">5/5</td><td class="ok">5/5</td><td class="ok">5/5</td><td class="ok">5/5</td></tr>
+      <tr><td>pipe-hold</td><td class="bad">VIOLATED</td><td class="ok">holds</td><td class="ok">holds</td><td class="bad">VIOLATED</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="bad">VIOLATED</td></tr>
+      <tr><td>orphan-at-exit</td><td class="bad">VIOLATED</td><td class="bad">VIOLATED</td><td class="bad">VIOLATED</td><td class="bad">VIOLATED</td><td class="ok">holds</td><td class="bad">VIOLATED</td><td class="bad">VIOLATED</td><td class="bad">VIOLATED</td></tr>
+      <tr><td>unconfirmed-stop</td><td class="na">n/a</td><td class="ok">holds</td><td class="ok">holds</td><td class="bad">VIOLATED</td><td class="na">n/a</td><td class="na">n/a</td><td class="na">n/a</td><td class="ok">holds</td></tr>
+      <tr><td>kill-mid-tool</td><td class="bad">VIOLATED</td><td class="bad">VIOLATED</td><td class="bad">VIOLATED</td><td class="bad">VIOLATED</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="bad">VIOLATED</td></tr>
+      <tr><td>kill-before-report</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td></tr>
+      <tr><td>output-flood</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td></tr>
+      <tr><td>cancel-tree</td><td class="bad">VIOLATED</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td></tr>
+      <tr><td>mcp-orphan-exit</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="bad">VIOLATED</td></tr>
+      <tr><td>mcp-orphan-kill</td><td class="bad">VIOLATED</td><td class="ok">holds</td><td class="bad">VIOLATED</td><td class="bad">VIOLATED</td><td class="ok">holds</td><td class="bad">VIOLATED</td><td class="bad">VIOLATED</td><td class="bad">VIOLATED</td></tr>
+      <tr><td>spawn-failure</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td><td class="ok">holds</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>稳定违规（按属性归类）</h3>
+  <div class="table-scroll"><table>
+    <thead><tr><th>场景</th><th>违规属性</th><th>harness（均为 5/5 稳定）</th></tr></thead>
+    <tbody>
+      <tr><td>pipe-hold</td><td><code>tool_call_waited_for_pipe_holder</code></td><td>gemini</td></tr>
+      <tr><td>pipe-hold</td><td><code>process_left_running_after_session</code></td><td>claude, qwen</td></tr>
+      <tr><td>orphan-at-exit</td><td><code>process_left_running_after_session</code></td><td>gemini, codex, opencode, claude, xio-node, xio-builtin, qwen</td></tr>
+      <tr><td>unconfirmed-stop</td><td><code>process_left_running_after_session</code></td><td>claude</td></tr>
+      <tr><td>kill-mid-tool</td><td><code>effect_not_in_resumed_history</code></td><td>gemini</td></tr>
+      <tr><td>kill-mid-tool</td><td><code>orphan_unaccounted_after_resume</code></td><td>gemini, codex, opencode, claude, qwen</td></tr>
+      <tr><td>cancel-tree</td><td><code>tree_survived_cancel</code></td><td>gemini</td></tr>
+      <tr><td>mcp-orphan-exit</td><td><code>mcp_server_left_running</code></td><td>qwen</td></tr>
+      <tr><td>mcp-orphan-kill</td><td><code>mcp_server_left_running</code></td><td>gemini, opencode, claude, xio-node, xio-builtin, qwen</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>值得单独说的三条观察</h3>
+  <ul>
+    <li><strong>没有任何 harness 重复执行副作用。</strong>kill-mid-tool 中 <code>effect_executions: 1</code> 在所有臂成立——双重执行这个最怕的噩梦没有被观察到。真正的差异在「残留与记账」：gemini 恢复后历史里整个调用消失；codex/opencode/qwen/claude 保留了调用但标记中断，且 1–2 个被打标进程在恢复后的会话里存活且无人提及。</li>
+    <li><strong>orphan-at-exit 测的是执行层，不是 agent 循环。</strong>命令用 setsid 逃逸出自己的会话后，五个外部 harness 全部在会话结束 3 秒后仍留着它（5/5）。xio 三个变体里只有 reaper 驱动（枚举并收割离开进程组的后代）成立——同一个 agent 循环，换执行层，结果翻转。</li>
+    <li><strong>unconfirmed-stop 的「假停止」。</strong>命令无视 SIGINT/SIGTERM 时，claude 报告「已停止」而被打标进程在会话结束后仍存活（5/5）。gemini 与 xio 各变体的 shell 工具没有时间上限参数，属性不可测，记 n/a 而不是放行。</li>
+  </ul>
+
+  <div class="callout">
+    <strong>这些结果不能推出：</strong>任何 harness 会重复副作用（未观察到）；产品排名；真实模型下的行为；其他平台 / 更新版本 / 沙箱加固选项开启时的表现；普通用户会话中必然可复现（这些是工具调用底下的刻意故障）。xio 的完整行是预发布构建上的历史测量（2026-09-30 后 UI 批次改变了交互与一次性模式的权限门），可引用的是 xio:node / xio:reaper 各格。
+  </div>
+
+  <h3>复现</h3>
+  <pre><code>git clone https://github.com/Xio-Shark/xioflow && cd xioflow && pnpm build
+node audit/run.mjs --scenario baseline --harness xio,codex,opencode,gemini,claude --trials 5
+node audit/run.mjs --scenario pipe-hold --harness codex --trials 5
+node audit/matrix.mjs audit/results/&lt;date&gt; &gt; matrix.md
+node audit/repro/generate.mjs audit/results/&lt;date&gt;   # 每个稳定违规格生成 3/3 复现脚本</code></pre>
+
+  <h2>二、观测感知的崩溃恢复（E4–E9）</h2>
+
+  <p><strong>问题：</strong>另一个 actor 改了工作区之后，被挂起的 agent 要么整个任务重来，要么<strong>复用仍然成立的历史前缀</strong>——记录中的观测在变化后的工作区里依然为真的那一部分。被测机制自动选择分叉点前最后一个完整检查点，重建前缀，只重算后缀。先验工作（2026-10-01 核对一手来源：AIOS、LangGraph time travel、Build systems à la carte、AutoGen）已覆盖检查点与回放；被检验的贡献是<strong>从变化的执行证据中自动选择有效恢复边界</strong>。</p>
+
+  <h3>正确性结果（确定性夹具）</h3>
+  <p class="muted">每个臂都断言最终文件树完全等价、他人改动被保留、结果可执行。</p>
+  <div class="table-scroll"><table>
+    <thead><tr><th>实验</th><th>设置</th><th>整任务重启</th><th>观测感知恢复</th><th>正确性</th></tr></thead>
+    <tbody>
+      <tr><td>E4</td><td>重放变异，一次性工作区，三决策 agent</td><td>重跑全部决策</td><td>校验旧轨迹 → 重建前缀 → 重算后缀</td><td class="ok">两臂均通过</td></tr>
+      <tr><td>E5</td><td>现有 runner 跨进程重启（脚本化 provider）</td><td>4 次请求</td><td>2–4 次请求（取决于哪条观测变化）</td><td class="ok">盲恢复 3 场景错 2；校验恢复 3/3 正确</td></tr>
+      <tr><td>E6</td><td>内核所有的 agent（AgentRuntime + xiocode loop 适配器）</td><td>—</td><td>证据门让 agent 暂停且不产生 provider 请求，从最近有效边界恢复</td><td class="ok">正确；A 5 步 / B 4 步完成</td></tr>
+      <tr><td>E7</td><td>代码编辑 + 竞争提交（真实 read/edit 工具）</td><td>5 次恢复请求</td><td>4 次；复用 1 条观测、4 个候选事务、7 次工具重放</td><td class="ok">与基线逐字节一致，B 的提交保留，调用方可执行断言通过</td></tr>
+    </tbody>
+  </table></div>
+
+  <p>E7 的确定性前缀策略额外跳过前缀已被证伪的检查点：候选分叉 4 → 2、工具重放 7 → 3，恢复请求数与正确性断言不变。确定性重放为 opt-in，因为隐藏的回调状态可能让前缀复用失效。</p>
+
+  <h3>E5 三场景明细</h3>
+  <div class="table-scroll"><table>
+    <thead><tr><th>场景</th><th class="num">整任务重启请求</th><th class="num">校验恢复请求</th><th class="num">恢复观测数</th><th>盲恢复正确</th><th>校验恢复正确</th></tr></thead>
+    <tbody>
+      <tr><td>无变化</td><td class="num">4</td><td class="num">2</td><td class="num">2</td><td class="ok">是</td><td class="ok">是</td></tr>
+      <tr><td>第二条观测变化</td><td class="num">4</td><td class="num">3</td><td class="num">1</td><td class="bad">否</td><td class="ok">是</td></tr>
+      <tr><td>第一条观测变化</td><td class="num">4</td><td class="num">4</td><td class="num">0</td><td class="bad">否</td><td class="ok">是</td></tr>
+    </tbody>
+  </table></div>
+  <p class="muted">全部请求指向确定性 provider，真实模型调用为零。中间场景校验增加 2 次读、重建增加 1 次读——更少的请求数不等于更低的端到端成本。</p>
+
+  <h3>E8 真实模型试点 —— 描述性，不构成节省证明</h3>
+  <div class="table-scroll"><table>
+    <thead><tr><th>指标</th><th class="num">整任务重启</th><th class="num">观测感知恢复</th></tr></thead>
+    <tbody>
+      <tr><td>变化后请求数（3 次试验，DeepSeek V4.1 Flash）</td><td class="num">27</td><td class="num">20</td></tr>
+      <tr><td>峰值费率 token 估算</td><td class="num">USD 0.0141111</td><td class="num">USD 0.0114681（观测低 18.7%）</td></tr>
+      <tr><td>模型/工具执行时间</td><td class="num">48.937 s</td><td class="num">55.629 s（含重建与恢复）</td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout warn">
+    <strong>阴性对照削弱了因果结论。</strong>之后一组九文件语义变化试验保留了零历史（第一条 glob 观测已变化），但两次全新运行之间仍出现请求数差异（21 vs 14）——模型自己选了不同的工具序列。因此 18.7% 的请求差<strong>还不能归因于恢复机制而非模型波动</strong>；这些观测中也没有速度收益。预算纪律：USD 10 上限，跨调用持久化账本，全部试验后保留 USD 6.15 保守预留；没有为了更好看的数字追加任何调用。
+  </div>
+
+  <h3>E9 日志压缩（边界性实验）</h3>
+  <p>compact v2 编码使日志载荷相对完整状态对照缩减 <strong>70.2%</strong>（7,579,626 vs 25,457,438 字节，181 个状态事件），61 个检查点边界上恢复数据不变。口径：逻辑 JSON 字节，非文件系统/WAL 流量；耗时为小样本本地测量，不可外推。</p>
+
+  <h3>复现</h3>
+  <pre><code>pnpm build
+node audit/observation/e4.mjs
+node audit/observation/e5.mjs
+node audit/observation/e6.mjs
+node audit/observation/e7.mjs
+node audit/observation/e9.mjs
+# E8 需要真实模型授权与端点，见 audit/observation/REAL-MODEL.md</code></pre>
+
+  <div class="callout">
+    <strong>这些结果不能推出：</strong>生产环境正确性、新颖性或通用任务表现；真实模型成本/速度节省（E8 差值被模型波动混淆，需要更大且平衡顺序的样本）；并发调度（夹具是并发改动完成后的串行恢复）；任意扩展状态的恢复（每个 quantum 重建宿主/工具实例）。
+  </div>
+</div></main>
+
+<footer class="site"><div class="wrap">
+  © 2026 滕彦翕 · 数据发布于 2026-10-13，源自 xioflow 仓库记录，未为本页做新运行
+</div></footer>
+</body>
+</html>

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>项目 · 滕彦翕</title>
+<meta name="description" content="xioflow 执行内核、XioCode、GSoC 2026 OpenKruise、CUDA 推理引擎等开源项目。">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="index.html">滕彦翕 <span>/ Xio-Shark</span></a>
+  <nav class="site">
+    <a href="index.html">首页</a>
+    <a href="projects.html" class="active">项目</a>
+    <a href="benchmark.html">实测数据</a>
+    <a href="articles.html">文章</a>
+  </nav>
+</div></header>
+
+<main><div class="wrap">
+  <h1>项目</h1>
+  <p class="sub">全部开源。主线是 Agent 执行可靠性，其余是系统与工具方向的练习场。</p>
+
+  <div class="proj">
+    <h3><a href="https://github.com/Xio-Shark/xioflow">xioflow</a> · Agent 受监督执行内核与多智能体运行时</h3>
+    <p class="stack">TypeScript · SQLite (WAL) · 零运行时依赖 · npm: @xioflow/kernel</p>
+    <p>Agent 运行时通常调一次 <code>spawn()</code> 然后听天由命：宿主在工具调用中途崩溃、取消无法确认时，留下的是孤儿进程、重复生效的副作用、以及对「实际发生了什么」的无记录。xioflow 把这些状态变成一等公民：</p>
+    <ul class="tight">
+      <li>意图先持久化再拉起进程，结果不可判定时记为 <code>indeterminate</code> 并保留租约，重启绝不盲目重放；</li>
+      <li>按操作 ID（opId）实现幂等：同指纹重投直接复用记录的结果，指纹不同报错；</li>
+      <li>终止按 SIGINT → SIGTERM → SIGKILL 对进程组升级，并重新枚举逃逸（setsid）后代；无法确认就诚实上报残留 PID；</li>
+      <li>工作区快照 / 按步回滚 / 分叉，回滚范围按指纹校验，绝不动声明范围外的文件；</li>
+      <li>三锁分离（OS 排他锁、SQLite WAL 写锁、资源租约）支撑多入口共用同一执行域，代际栅栏隔离过期属主。</li>
+    </ul>
+    <p>核心 172 项单测（含 44 项共享契约），CI 覆盖 Node 22/24、Ubuntu 与 macOS。附四个可运行集成示例（替换 subprocess 封装 / Temporal activity / LangGraph 节点 / MCP stdio 传输）。执行层正确性有公开的<a href="benchmark.html">故障注入对照实验</a>背书。</p>
+  </div>
+
+  <div class="proj">
+    <h3><a href="https://github.com/Xio-Shark/xiocode">XioCode</a> · 开源 Coding Agent</h3>
+    <p class="stack">TypeScript · Node.js · npm 与 Homebrew 可安装</p>
+    <p>本地优先的终端 AI 编程助手：串联模型调用、工具执行与结果回传，终端交互加 Web 控制台（SSE 展示运行轨迹与文件差异）。长任务支持会话增量记录、断点恢复与按轮回滚；上下文按消息数与 token 预算压缩，超大工具结果落盘保留短引用。默认执行层跑在 xioflow 内核上——上面的故障注入实验就是让这次切换安全的依据。</p>
+  </div>
+
+  <div class="proj">
+    <h3>GSoC 2026 · <a href="https://github.com/openkruise/rollouts">OpenKruise Rollouts</a></h3>
+    <p class="stack">Go · Kubernetes 控制器 / Admission Webhook</p>
+    <p>针对灰度期间改写 Deployment 更新策略带来的全量重建风险，设计并实现了保持 RollingUpdate 的分批发布方案，以 minReadySeconds 与 maxUnavailable 控制新版本可用副本与发布批次；含控制器、admission webhook 与发布结束后的参数恢复，并补充单元、集成与 E2E 用例。与维护者完成六轮代码评审，期间修复了上游 MaxSurge 默认值赋错的问题。</p>
+    <p>设计提案 <a href="https://github.com/openkruise/rollouts/pull/341">KEP #341</a> 与实现 <a href="https://github.com/openkruise/rollouts/pull/343">PR #343</a> 均已于 2026-08-17 合入 master（45 commits / 68 文件，含测试）。</p>
+  </div>
+
+  <div class="proj">
+    <h3><a href="https://github.com/Xio-Shark/cpp-inference-engine">cpp-inference-engine</a> · 极简 C++ LLM 推理引擎</h3>
+    <p class="stack">C++ · CUDA · cuBLAS FP16</p>
+    <p>safetensors 加载器 + 9 个原生 CUDA 核函数；Qwen2.5-7B 单层推理在 RTX 4090 上 0.68ms。系统方向的练习场：内存布局、kernel 融合与精度对齐。</p>
+  </div>
+
+  <div class="proj">
+    <h3><a href="https://github.com/Xio-Shark/aoxiang-kebiao">aoxiang-kebiao</a> · 西工大翱翔课表客户端</h3>
+    <p class="stack">Dart · Flutter · Go</p>
+    <p>教务系统内嵌直接嗅探导入，iOS / Android 双端，莫兰迪毛玻璃视觉。给真实用户做的完整产品。</p>
+  </div>
+
+  <h2>实习</h2>
+  <p><strong>美团 · 履约平台技术部</strong>（2026.06–09，全栈开发实习）：服务骑手端的页面配置平台。交付了字段级差异预览与选择同步（已上线）、多端共用的 H5 评审原型、以及 BFF 排障三件套（配置检查 / 差异比较 / 分层探测）并接入 AIDE 虚拟专家——在 12 个隐藏用例的对照实验中，有无工具的平均得分从 8.09 提升到 10.0（满分 10）。</p>
+</div></main>
+
+<footer class="site"><div class="wrap">
+  © 2026 滕彦翕 · <a href="https://github.com/Xio-Shark">@Xio-Shark</a>
+</div></footer>
+</body>
+</html>
