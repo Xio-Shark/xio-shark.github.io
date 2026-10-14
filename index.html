@@ -31,9 +31,9 @@
   <p>我的主要工作围绕一个问题：模型能力持续提升，而让它执行的操作可回滚、可恢复、可审计，是另一层工程。</p>
 
   <ul>
-    <li><strong>xioflow</strong> — 面向 Agent 运行时的受监督执行内核：意图先落库再拉起进程；结果无法确认时记为「不可判定」，不假报成功。已发布 npm，是 XioCode 的默认执行层。</li>
-    <li><strong>执行层故障注入实测</strong> — 对 6 个编程助手做了 11 类故障注入、442 次试验的对照审计，<a href="benchmark.html">数据与方法全部公开</a>。</li>
-    <li><strong>GSoC 2026 · OpenKruise Rollouts</strong> — 保持 RollingUpdate 的分批发布方案，KEP #341 与 PR #343 已于 2026-08-17 合入 master。</li>
+    <li><strong>xioflow</strong> — 面向多智能体并发的受监督执行内核（TypeScript / C / Linux cgroup v2）：C 原生 subreaper + pidfd / kqueue 进程树管控、基于文件 atime 读集的乐观并发事务（OCC）、观测重放 Early Cutoff 与跨分叉目录树指纹幂等去重；715 项测试与 67 项黑盒契约通过，已发布 npm。</li>
+    <li><strong>执行层故障注入与恢复实测</strong> — 对 6 个编程助手做了 11 类故障注入、442 次试验的对照审计，以及 E4–E10 观测感知恢复与 Early Cutoff 实验，<a href="benchmark.html">数据与方法全部公开</a>。</li>
+    <li><strong>GSoC 2026 · OpenKruise Rollouts</strong> — 保持 RollingUpdate 的分批发布方案，KEP #341 与 PR #343（+8749 −208）已于 2026-08-17 合入 master。</li>
   </ul>
 
   <div class="cardrow">

@@ -87,7 +87,7 @@ node audit/run.mjs --scenario pipe-hold --harness codex --trials 5
 node audit/matrix.mjs audit/results/&lt;date&gt; &gt; matrix.md
 node audit/repro/generate.mjs audit/results/&lt;date&gt;   # 每个稳定违规格生成 3/3 复现脚本</code></pre>
 
-  <h2>二、观测感知的崩溃恢复（E4–E9）</h2>
+  <h2>二、观测感知的崩溃恢复与 Early Cutoff（E4–E10）</h2>
 
   <p><strong>问题：</strong>另一个 actor 改了工作区之后，被挂起的 agent 要么整个任务重来，要么<strong>复用仍然成立的历史前缀</strong>——记录中的观测在变化后的工作区里依然为真的那一部分。被测机制自动选择分叉点前最后一个完整检查点，重建前缀，只重算后缀。先验工作（2026-10-01 核对一手来源：AIOS、LangGraph time travel、Build systems à la carte、AutoGen）已覆盖检查点与回放；被检验的贡献是<strong>从变化的执行证据中自动选择有效恢复边界</strong>。</p>
 
@@ -132,6 +132,27 @@ node audit/repro/generate.mjs audit/results/&lt;date&gt;   # 每个稳定违规�
   <h3>E9 日志压缩（边界性实验）</h3>
   <p>compact v2 编码使日志载荷相对完整状态对照缩减 <strong>70.2%</strong>（7,579,626 vs 25,457,438 字节，181 个状态事件），61 个检查点边界上恢复数据不变。口径：逻辑 JSON 字节，非文件系统/WAL 流量；耗时为小样本本地测量，不可外推。</p>
 
+  <h3>E10 Early Cutoff 与目录树指纹跨分叉命令去重（确定性夹具）</h3>
+  <p>E8 的阴性对照暴露了一个结构性瓶颈：coding agent 通常以宽泛的发现步骤（<code>glob("**/*.ts")</code>）或带行号的整文件读取开局。当并发事务新增了一个调用方文件或在文件顶部插入注释导致行号下移时，严格的原始输出哈希比较会让第 0 步或第 1 步直接失效，迫使整条 19 步轨迹从头重跑。E10 评估两项内核机制：</p>
+  <ul>
+    <li><strong>观测重放 Early Cutoff</strong>（<code>computeSymbolSliceCutoffHash</code> + <code>computeDiscoverySetCutoff</code>）：剥离行号前缀与注释计算符号切片哈希，并将纯新增的发现集识别为可增量补做的超集；</li>
+    <li><strong>跨分叉目录树指纹命令去重</strong>（<code>executeWorkspaceCommand</code> + <code>computeTreeCommandFingerprint</code>）：将只读验证命令（如 <code>tsc --noEmit</code>）的操作指纹锚定在工作区文件树哈希而非分叉目录路径上，使并发分叉共享同一个 In-flight 或已记录的验证结果。</li>
+  </ul>
+  <div class="table-scroll"><table>
+    <thead><tr><th>场景</th><th class="num">严格重放复用步骤</th><th class="num">Early Cutoff 复用步骤</th><th class="num">严格重做步骤</th><th class="num">Early Cutoff 重做步骤</th><th>隐藏行为校验</th></tr></thead>
+    <tbody>
+      <tr><td>新增调用方文件（<code>new-caller</code>，19 步轨迹）</td><td class="num">0 / 19</td><td class="num">17 / 19</td><td class="num">19</td><td class="num">2（仅补改新增文件）</td><td class="ok">通过</td></tr>
+      <tr><td>顶部插入注释行（<code>comment</code>，7 步轨迹）</td><td class="num">1 / 7</td><td class="num">7 / 7</td><td class="num">6</td><td class="num">0（直接提交）</td><td class="ok">通过</td></tr>
+    </tbody>
+  </table></div>
+  <div class="table-scroll"><table>
+    <thead><tr><th>4 分叉并发运行真实 <code>tsc --noEmit</code>（60 文件 TS 夹具）</th><th class="num">无去重派生进程</th><th class="num">目录树指纹去重派生进程</th><th class="num">无去重耗时</th><th class="num">去重耗时</th></tr></thead>
+    <tbody>
+      <tr><td>首轮并发验证（In-flight join）</td><td class="num">4</td><td class="num">1（3 个分叉 join）</td><td class="num">295 ms</td><td class="num">282 ms</td></tr>
+      <tr><td>工作区未变时复验（Recorded replay）</td><td class="num">4</td><td class="num">0（4 个分叉直接复用）</td><td class="num">293 ms</td><td class="num">64 ms</td></tr>
+    </tbody>
+  </table></div>
+
   <h3>复现</h3>
   <pre><code>pnpm build
 node audit/observation/e4.mjs
@@ -139,10 +160,11 @@ node audit/observation/e5.mjs
 node audit/observation/e6.mjs
 node audit/observation/e7.mjs
 node audit/observation/e9.mjs
+node audit/observation/e10.mjs
 # E8 需要真实模型授权与端点，见 audit/observation/REAL-MODEL.md</code></pre>
 
   <div class="callout">
-    <strong>这些结果不能推出：</strong>生产环境正确性、新颖性或通用任务表现；真实模型成本/速度节省（E8 差值被模型波动混淆，需要更大且平衡顺序的样本）；并发调度（夹具是并发改动完成后的串行恢复）；任意扩展状态的恢复（每个 quantum 重建宿主/工具实例）。
+    <strong>这些结果不能推出：</strong>生产环境正确性、新颖性或通用任务表现；真实模型成本/速度节省（E8 差值被模型波动混淆，E10 为确定性夹具与本机 4 分叉测量）；任意扩展状态的恢复（每个 quantum 重建宿主/工具实例）。
   </div>
 </div></main>
 

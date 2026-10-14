@@ -23,17 +23,17 @@
   <p class="sub">全部开源。主线是 Agent 执行可靠性，其余是系统与工具方向的练习场。</p>
 
   <div class="proj">
-    <h3><a href="https://github.com/Xio-Shark/xioflow">xioflow</a> · Agent 受监督执行内核与多智能体运行时</h3>
-    <p class="stack">TypeScript · SQLite (WAL) · 零运行时依赖 · npm: @xioflow/kernel</p>
-    <p>许多 Agent 运行时的执行层是 <code>spawn()</code> 加超时的简单封装：当宿主在工具调用中途崩溃、取消无法确认时，可能留下孤儿进程、结果不确定的副作用，以及缺失的执行记录。xioflow 把这些状态变成一等公民：</p>
+    <h3><a href="https://github.com/Xio-Shark/xioflow">xioflow</a> · 面向多智能体并发的受监督执行内核</h3>
+    <p class="stack">TypeScript · C (Linux subreaper / pidfd / macOS kqueue) · Linux cgroup v2 · SQLite (WAL) · npm: @xioflow/kernel</p>
+    <p>许多 Agent 运行时的执行层是 <code>spawn()</code> 加超时的简单封装：当宿主在工具调用中途崩溃、取消无法确认，或多个 Agent 并发修改同一工作区时，常留下逃逸孤儿进程、不可判定的副作用，以及粗粒度文件锁导致的整条轨迹作废重跑。xioflow 在进程树、工作区事务与观测日志三层提供内核级保证：</p>
     <ul class="tight">
-      <li>意图先持久化再拉起进程，结果不可判定时记为 <code>indeterminate</code> 并保留租约，重启绝不盲目重放；</li>
-      <li>按操作 ID（opId）实现幂等：同指纹重投直接复用记录的结果，指纹不同报错；</li>
-      <li>终止按 SIGINT → SIGTERM → SIGKILL 对进程组升级，并重新枚举逃逸（setsid）后代；无法完全收割时如实上报残留 PID；</li>
-      <li>工作区快照 / 按步回滚 / 分叉，回滚范围按指纹校验，绝不动声明范围外的文件；</li>
-      <li>三锁分离（OS 排他锁、SQLite WAL 写锁、资源租约）支撑多入口共用同一执行域，代际栅栏隔离过期属主。</li>
+      <li><strong>OS 级进程树管控与资源硬隔离</strong>：C 原生守护程序（<code>xioflow-reaper.c</code>）配合 Linux cgroup v2 驱动，在 Spawn Gate 挂载独立 cgroup 限制 <code>memory.max</code> / <code>pids.max</code>；以 <code>PR_SET_CHILD_SUBREAPER</code> + <code>pidfd_send_signal</code>（Linux）与 <code>kqueue NOTE_FORK</code>（macOS）收养并零竞态终止 <code>setsid</code> 双重 fork 逃逸孤儿；</li>
+      <li><strong>多 Agent 工作区乐观并发事务（OCC）</strong>：通过文件 <code>atime</code> 归一化实现零特权读集追踪，结合 <code>git-shadow</code> 写集差分做提交期后向冲突校验（Backward Validation）；</li>
+      <li><strong>观测级冲突消解与 Early Cutoff</strong>：文件级读写冲突时在临时分叉重放观测日志，通过 AST 符号切片哈希（剥离注释与行号偏移）和增量文件发现集实现 Early Cutoff，自动定位最大有效 Checkpoint 前缀并仅重算后缀（脚本化基准重做步骤 19→2、6→0）；</li>
+      <li><strong>跨分叉目录树指纹命令去重</strong>：以工作区文件树哈希锚定操作指纹（<code>executeWorkspaceCommand</code>），4 分叉并发执行 <code>tsc --noEmit</code> 时自动合并为单次进程（4→1）并支持不变工作区零派生复验（4→0）；</li>
+      <li><strong>三锁分离与诚实恢复</strong>：OS 排他锁 + SQLite WAL 写锁 + 资源租约，Epoch Fencing 代际栅栏隔离过期属主；结果不可判定时记为 <code>indeterminate</code> 并保留租约，绝不静默重放。</li>
     </ul>
-    <p>核心 172 项单测（含 44 项共享契约），CI 覆盖 Node 22/24、Ubuntu 与 macOS。附四个可运行集成示例（替换 subprocess 封装 / Temporal activity / LangGraph 节点 / MCP stdio 传输）。执行层正确性有公开的<a href="benchmark.html">故障注入对照实验</a>背书。</p>
+    <p>全仓 <strong>715 项测试通过（含 67 项编号黑盒 conformance 契约与无依赖 plain runner）</strong>，配套 TLA+ 形式化规约与跨进程崩溃点注入矩阵，CI 覆盖 Node 22/24、Ubuntu 与 macOS。执行层正确性与恢复收益有公开的<a href="benchmark.html">故障注入与崩溃恢复实验（E4–E10）</a>背书。</p>
   </div>
 
   <div class="proj">
