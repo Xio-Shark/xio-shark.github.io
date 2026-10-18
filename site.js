@@ -1,5 +1,7 @@
-/* 站点交互：主题切换、移动导航、阅读进度、代码复制、入场动画、回到顶部。
-   纯原生 JS，无依赖，无外部请求。 */
+/* Xio-Shark site interactions.
+   Vanilla JS, no dependencies, no network requests.
+   theme toggle, mobile nav, scroll reveal, reading progress, TOC highlighting,
+   code copy, back to top, pointer spotlight on cards. */
 (function () {
   'use strict';
 
@@ -7,57 +9,73 @@
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var en = (root.lang || '').toLowerCase().indexOf('en') === 0;
   var T = en
-    ? { open: 'Open navigation menu', close: 'Close navigation menu',
-        dark: 'Toggle dark mode', light: 'Toggle light mode',
-        copy: 'Copy', copied: 'Copied', top: 'Back to top' }
-    : { open: '打开导航菜单', close: '关闭导航菜单',
-        dark: '切换深色模式', light: '切换浅色模式',
-        copy: '复制', copied: '已复制', top: '回到页面顶部' };
+    ? { open: 'Open menu', close: 'Close menu', dark: 'Switch to dark theme',
+        light: 'Switch to light theme', copy: 'Copy', copied: 'Copied',
+        top: 'Back to top' }
+    : { open: '打开导航菜单', close: '关闭导航菜单', dark: '切换到深色主题',
+        light: '切换到浅色主题', copy: '复制', copied: '已复制',
+        top: '回到页面顶部' };
 
-  /* ---- 主题 ---- */
-  function applyTheme(theme) {
-    if (theme === 'light' || theme === 'dark') {
-      root.setAttribute('data-theme', theme);
-    } else {
-      root.removeAttribute('data-theme');
-    }
+  /* ---------- theme ---------- */
+  var mq = window.matchMedia('(prefers-color-scheme: dark)');
+
+  function resolvedTheme() {
+    var set = root.getAttribute('data-theme');
+    if (set === 'light' || set === 'dark') return set;
+    return mq.matches ? 'dark' : 'light';
   }
-  function currentTheme() {
-    var saved = root.getAttribute('data-theme');
-    if (saved) return saved;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function paint(theme) {
+    root.setAttribute('data-theme', theme);
+    var meta = document.querySelectorAll('meta[name="theme-color"]');
+    Array.prototype.forEach.call(meta, function (m) {
+      m.setAttribute('content', theme === 'dark' ? '#08080a' : '#fbfaf7');
+    });
+    var btn = document.getElementById('themeToggle');
+    if (btn) btn.setAttribute('aria-label', theme === 'dark' ? T.light : T.dark);
   }
-  applyTheme(root.getAttribute('data-theme'));
+
+  if (root.getAttribute('data-theme')) paint(root.getAttribute('data-theme'));
 
   var themeBtn = document.getElementById('themeToggle');
   if (themeBtn) {
     themeBtn.addEventListener('click', function () {
-      var next = currentTheme() === 'dark' ? 'light' : 'dark';
-      applyTheme(next);
-      try { localStorage.setItem('theme', next); } catch (e) {}
-      themeBtn.setAttribute('aria-label', next === 'dark' ? T.light : T.dark);
+      var next = resolvedTheme() === 'dark' ? 'light' : 'dark';
+      var commit = function () {
+        paint(next);
+        try { localStorage.setItem('theme', next); } catch (e) {}
+      };
+      if (reduce || !document.startViewTransition) { commit(); return; }
+      document.startViewTransition(commit);
     });
   }
 
-  /* ---- 顶栏滚动状态 ---- */
+  /* ---------- header state + progress + back to top ---------- */
   var header = document.getElementById('siteHeader');
   var toTop = null;
   var progress = null;
+  var ticking = false;
 
-  function onScroll() {
+  function frame() {
+    ticking = false;
     var y = window.scrollY || window.pageYOffset;
-    if (header) header.classList.toggle('scrolled', y > 8);
-    if (toTop) toTop.classList.toggle('on', y > 600);
+    if (header) header.classList.toggle('scrolled', y > 6);
+    if (toTop) toTop.classList.toggle('on', y > 640);
     if (progress) {
-      var doc = document.documentElement;
-      var max = doc.scrollHeight - window.innerHeight;
-      var pct = max > 0 ? Math.min(1, y / max) : 0;
-      progress.style.width = (pct * 100).toFixed(2) + '%';
+      var max = root.scrollHeight - window.innerHeight;
+      progress.style.width = (max > 0 ? Math.min(1, y / max) * 100 : 0).toFixed(2) + '%';
     }
   }
-  window.addEventListener('scroll', onScroll, { passive: true });
 
-  /* ---- 移动端导航 ---- */
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(frame);
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('resize', onScroll, { passive: true });
+
+  /* ---------- mobile nav ---------- */
   var navToggle = document.getElementById('navToggle');
   var nav = document.getElementById('siteNav');
   if (navToggle && nav) {
@@ -81,7 +99,7 @@
     });
   }
 
-  /* ---- 阅读进度条（仅长文页） ---- */
+  /* ---------- reading progress (long-form pages only) ---------- */
   if (document.querySelector('.article-body')) {
     progress = document.createElement('div');
     progress.className = 'progress';
@@ -90,7 +108,7 @@
     requestAnimationFrame(function () { progress.classList.add('on'); });
   }
 
-  /* ---- 回到顶部 ---- */
+  /* ---------- back to top ---------- */
   toTop = document.createElement('button');
   toTop.className = 'to-top';
   toTop.type = 'button';
@@ -104,7 +122,7 @@
   });
   document.body.appendChild(toTop);
 
-  /* ---- 代码块复制 ---- */
+  /* ---------- code copy ---------- */
   Array.prototype.forEach.call(document.querySelectorAll('pre'), function (pre) {
     var code = pre.querySelector('code');
     if (!code) return;
@@ -121,7 +139,7 @@
         setTimeout(function () {
           btn.textContent = T.copy;
           btn.classList.remove('done');
-        }, 1600);
+        }, 1500);
       };
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(done, function () {});
@@ -139,22 +157,80 @@
     pre.appendChild(btn);
   });
 
-  /* ---- 入场动画 ---- */
+  /* ---------- scroll reveal with stagger ---------- */
   if (!reduce && 'IntersectionObserver' in window) {
-    var targets = document.querySelectorAll('.card, .proj, .callout, .table-scroll');
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('in');
-          io.unobserve(entry.target);
-        }
-      });
-    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.06 });
+    var groups = new Map();
+    var targets = document.querySelectorAll('.card, .proj, .callout, .table-scroll, .work-item, .stat, .article-body h2');
     Array.prototype.forEach.call(targets, function (el) {
       el.classList.add('reveal');
-      io.observe(el);
+      var parent = el.parentNode;
+      var n = groups.get(parent) || 0;
+      el.style.setProperty('--i', Math.min(n, 6));
+      groups.set(parent, n + 1);
+    });
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('in');
+        io.unobserve(entry.target);
+      });
+    }, { rootMargin: '0px 0px -6% 0px', threshold: 0.08 });
+    Array.prototype.forEach.call(targets, function (el) { io.observe(el); });
+  }
+
+  /* ---------- TOC active tracking ---------- */
+  var toc = document.querySelector('.toc');
+  if (toc && 'IntersectionObserver' in window) {
+    var links = {};
+    Array.prototype.forEach.call(toc.querySelectorAll('a[href^="#"]'), function (a) {
+      links[a.getAttribute('href').slice(1)] = a;
+    });
+    var heads = document.querySelectorAll('.article-body h2[id]');
+    if (Object.keys(links).length && heads.length) {
+      var visible = new Set();
+      var tocIO = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) visible.add(entry.target.id);
+          else visible.delete(entry.target.id);
+        });
+        var current = null;
+        Array.prototype.some.call(heads, function (h) {
+          if (visible.has(h.id)) { current = h.id; return true; }
+          return false;
+        });
+        Array.prototype.forEach.call(toc.querySelectorAll('a'), function (a) {
+          a.classList.remove('active');
+        });
+        if (current && links[current]) links[current].classList.add('active');
+      }, { rootMargin: '-88px 0px -62% 0px', threshold: 0 });
+      Array.prototype.forEach.call(heads, function (h) { tocIO.observe(h); });
+    }
+  }
+
+  /* ---------- pointer spotlight on cards ---------- */
+  if (!reduce && window.matchMedia('(pointer: fine)').matches) {
+    Array.prototype.forEach.call(document.querySelectorAll('.card'), function (card) {
+      card.addEventListener('pointermove', function (e) {
+        var r = card.getBoundingClientRect();
+        card.style.setProperty('--mx', ((e.clientX - r.left) / r.width * 100).toFixed(1) + '%');
+        card.style.setProperty('--my', ((e.clientY - r.top) / r.height * 100).toFixed(1) + '%');
+      });
     });
   }
 
-  onScroll();
+  /* ---------- hero parallax (pointer) ---------- */
+  var visual = document.querySelector('.hero-visual');
+  if (visual && !reduce && window.matchMedia('(pointer: fine)').matches) {
+    var hero = visual.parentNode;
+    hero.addEventListener('pointermove', function (e) {
+      var r = hero.getBoundingClientRect();
+      var dx = (e.clientX - r.left) / r.width - 0.5;
+      var dy = (e.clientY - r.top) / r.height - 0.5;
+      visual.style.transform = 'perspective(1000px) rotateX(' + (-dy * 3).toFixed(2) +
+        'deg) rotateY(' + (dx * 3).toFixed(2) + 'deg)';
+    });
+    hero.addEventListener('pointerleave', function () { visual.style.transform = ''; });
+  }
+
+  frame();
 })();

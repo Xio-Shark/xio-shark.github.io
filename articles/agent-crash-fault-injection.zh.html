@@ -7,8 +7,7 @@
 <meta name="description" content="当工具调用底下出了故障，AI 编程助手报告的与机器实际状态一致吗？11 类故障注入、442 次试验的执行层对照审计，附数据与复现脚本。">
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0d131c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf7">
 <meta property="og:type" content="website">
 <meta property="og:title" content="AI Agent 崩溃之后会发生什么？——对 6 个编程助手的 442 次故障注入实测 · Xio-Shark">
 <meta property="og:description" content="当工具调用底下出了故障，AI 编程助手报告的与机器实际状态一致吗？11 类故障注入、442 次试验的执行层对照审计，附数据与复现脚本。">
@@ -31,6 +30,7 @@
 </div></header>
 
 <main id="main"><div class="wrap article-body">
+  <p class="eyebrow">Fault Injection · 2026-10</p>
   <h1>AI Agent 崩溃之后会发生什么？</h1>
   <p class="sub">对 6 个编程助手的 442 次故障注入实测 · 2026-10-13 · <a href="agent-crash-fault-injection.en.html">English</a></p>
 
@@ -148,6 +148,9 @@ node audit/repro/generate.mjs audit/results/&lt;date&gt;</code></pre>
   <p class="muted">作者：<a href="https://github.com/Xio-Shark">@Xio-Shark</a>。文中数字来自 2026-09-30 记录轮次与 2026-10-13 发布的仓库数据，未为本文做新运行。</p>
 </div></main>
 
-<footer class="site"><div class="wrap">© 2026 Xio-Shark · 欢迎署名转载</div></footer>
+<footer class="site"><div class="wrap">
+  <span>© 2026 Xio-Shark</span>
+  <span>欢迎署名转载</span>
+</div></footer>
 </body>
 </html>
