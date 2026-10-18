@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Xio-Shark">
+  <rect width="64" height="64" rx="14" fill="#0e7c73"/>
+  <path d="M14 46c10-2 20-9 27-19 3 6 4 12 3 18-9 3-21 4-30 1z" fill="#ffffff" opacity=".95"/>
+  <path d="M41 27l9-9-2 12z" fill="#ffffff" opacity=".75"/>
+</svg>

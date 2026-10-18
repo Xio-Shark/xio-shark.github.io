@@ -97,4 +97,4 @@ node audit/repro/generate.mjs audit/results/<date>
 
 ---
 
-作者：滕彦翕（[@Xio-Shark](https://github.com/Xio-Shark)）
+作者：[@Xio-Shark](https://github.com/Xio-Shark)

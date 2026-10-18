@@ -100,4 +100,4 @@ If you build agent products, you are welcome to run these scenarios against your
 
 ---
 
-*Author: Teng Yanxi ([@Xio-Shark](https://github.com/Xio-Shark)). All numbers are from the 2026-09-30 recorded round and repository data published 2026-10-13; no new runs were made for this article.*
+*Author: [@Xio-Shark](https://github.com/Xio-Shark). All numbers are from the 2026-09-30 recorded round and repository data published 2026-10-13; no new runs were made for this article.*
